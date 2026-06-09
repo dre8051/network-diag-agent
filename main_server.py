@@ -238,21 +238,32 @@ async def _get_latest_message_id(history_id: str) -> Optional[str]:
     透過 Gmail history API 取得 historyId 對應的最新 message ID
     """
     try:
-        import googleapiclient.discovery
-        from gmail_auth import get_credentials
+        import subprocess
+        import json
 
-        creds = get_credentials()
-        service = googleapiclient.discovery.build("gmail", "v1", credentials=creds)
+        # 用 gws history list 取得變化
+        cmd = [
+            "gws", "gmail", "users", "history", "list", 
+            "--params", json.dumps({
+                "userId": "me", 
+                "startHistoryId": history_id, 
+                "historyTypes": "messageAdded", 
+                "labelId": "INBOX"
+            })
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error(f"gws history list 失敗：{result.stderr}")
+            return None
 
-        # 用 historyId 查詢 history list
-        history = service.users().history().list(
-            userId="me",
-            startHistoryId=history_id,
-            historyTypes=["messageAdded"],
-            labelId="INBOX",
-        ).execute()
-
-        changes = history.get("history", [])
+        # 找 json { 開頭
+        out = result.stdout
+        idx = out.find("{")
+        if idx == -1:
+            return None
+        
+        history_data = json.loads(out[idx:])
+        changes = history_data.get("history", [])
         if not changes:
             # historyId 之後沒有新信件，可能是舊 history ID 或已處理
             logger.info(f"historyId={history_id} 之後無新信件")

@@ -73,8 +73,22 @@ class TestTestTriggerEndpoint:
         assert resp.status_code == 200
         assert resp.json()["status"] == "rejected"
 
-    def test_valid_request_accepted(self):
+    def test_valid_request_accepted(self, monkeypatch):
         """驗證通過後應回 accepted（背景非同步跑，不等完成）"""
+        from main_server import app
+        import globalping_client
+        
+        # Mock globalping_client.run_all to return dummy data
+        monkeypatch.setattr(globalping_client, "run_all", lambda ip: {
+            "target": ip,
+            "ping": {"status": "finished", "results": []},
+            "traceroute": {"status": "finished", "results": []},
+            "dns": {"status": "finished", "results": []}
+        })
+        
+        # Mock fabric_runner.analyze
+        import fabric_runner
+        monkeypatch.setattr(fabric_runner, "analyze", lambda x: "---[用戶版]---\nMocked\n---[工程師版]---\nMocked")
         resp = client.post("/test/trigger", json={
             "target_ip": "8.8.8.8",
             "passphrase": "dragon2024"
