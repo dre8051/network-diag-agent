@@ -72,8 +72,8 @@ def format_summary(results: dict) -> str:
     # === DNS ===
     lines.append("=== DNS 解析結果 ===")
     dns = results.get("dns", {})
-    if dns.get("status") in ("error", "timeout"):
-        lines.append(f"  ⚠ 測試失敗：{dns.get('error', '未知錯誤')}")
+    if dns.get("status") in ("error", "timeout", "skipped"):
+        lines.append(f"  ⚠ {dns.get('error', '未知錯誤')}")
     else:
         for probe in dns.get("results", []):
             probe_info = probe.get("probe", {})
@@ -94,27 +94,37 @@ def parse_ai_report(fabric_output: str) -> Tuple[str, str]:
     從 fabric 輸出解析用戶版與工程師版
     回傳 (user_report, engineer_report)
     """
+    import re
+
     user_report = ""
     engineer_report = ""
 
-    if USER_SECTION_MARKER in fabric_output and ENGINEER_SECTION_MARKER in fabric_output:
-        # 找到兩個 marker
-        user_start = fabric_output.index(USER_SECTION_MARKER) + len(USER_SECTION_MARKER)
-        eng_start = fabric_output.index(ENGINEER_SECTION_MARKER)
-        eng_content_start = eng_start + len(ENGINEER_SECTION_MARKER)
+    # 使用正則表達式尋找 [用戶版] 與 [工程師版]，忽略前方的字元（如 ### ** 或 ---）
+    user_match = re.search(r"(?i).*?\[用戶版\].*?\n", fabric_output)
+    eng_match = re.search(r"(?i).*?\[工程師版\].*?\n", fabric_output)
 
-        user_report = fabric_output[user_start:eng_start].strip()
-        engineer_report = fabric_output[eng_content_start:].strip()
+    if user_match and eng_match:
+        user_start = user_match.end()
+        eng_start = eng_match.start()
+        eng_content_start = eng_match.end()
+
+        # 如果 [工程師版] 在 [用戶版] 之前出現（理論上不會，但防呆）
+        if eng_start < user_start:
+            user_report = fabric_output[user_start:].strip()
+            engineer_report = fabric_output[eng_content_start:user_match.start()].strip()
+        else:
+            user_report = fabric_output[user_start:eng_start].strip()
+            engineer_report = fabric_output[eng_content_start:].strip()
 
         logger.info("✅ 成功解析 AI 報告（用戶版 + 工程師版）")
-    elif USER_SECTION_MARKER in fabric_output:
+    elif user_match:
         # 只有用戶版
-        user_start = fabric_output.index(USER_SECTION_MARKER) + len(USER_SECTION_MARKER)
+        user_start = user_match.end()
         user_report = fabric_output[user_start:].strip()
         engineer_report = "（AI 報告未包含工程師版）\n\n" + fabric_output
-    elif ENGINEER_SECTION_MARKER in fabric_output:
+    elif eng_match:
         # 只有工程師版
-        eng_start = fabric_output.index(ENGINEER_SECTION_MARKER) + len(ENGINEER_SECTION_MARKER)
+        eng_start = eng_match.end()
         engineer_report = fabric_output[eng_start:].strip()
         user_report = "AI 報告格式解析失敗，請查看原始輸出"
     else:
@@ -122,6 +132,10 @@ def parse_ai_report(fabric_output: str) -> Tuple[str, str]:
         logger.warning("AI 報告不含預期分隔標記，以完整輸出作為工程師版")
         engineer_report = fabric_output
         user_report = "AI 報告格式解析失敗，請查看原始輸出"
+
+    # 過濾掉開頭可能的連續破折號
+    user_report = re.sub(r"^[-=\s]+", "", user_report)
+    engineer_report = re.sub(r"^[-=\s]+", "", engineer_report)
 
     return user_report, engineer_report
 

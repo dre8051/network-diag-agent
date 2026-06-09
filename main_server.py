@@ -241,19 +241,19 @@ async def _get_latest_message_id(history_id: str) -> Optional[str]:
         import subprocess
         import json
 
-        # 用 gws history list 取得變化
+        # 直接找最新一封未讀的信件
         cmd = [
-            "gws", "gmail", "users", "history", "list", 
+            "gws", "gmail", "users", "messages", "list", 
             "--params", json.dumps({
                 "userId": "me", 
-                "startHistoryId": history_id, 
-                "historyTypes": "messageAdded", 
-                "labelId": "INBOX"
+                "labelIds": ["INBOX", "UNREAD"],
+                "maxResults": 1,
+                "q": "subject:[網路障礙回報]"
             })
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            logger.error(f"gws history list 失敗：{result.stderr}")
+            logger.error(f"gws messages list 失敗：{result.stderr}")
             return None
 
         # 找 json { 開頭
@@ -262,20 +262,22 @@ async def _get_latest_message_id(history_id: str) -> Optional[str]:
         if idx == -1:
             return None
         
-        history_data = json.loads(out[idx:])
-        changes = history_data.get("history", [])
-        if not changes:
-            # historyId 之後沒有新信件，可能是舊 history ID 或已處理
-            logger.info(f"historyId={history_id} 之後無新信件")
+        data = json.loads(out[idx:])
+        messages = data.get("messages", [])
+        if not messages:
+            logger.info(f"沒有找到未讀的 [網路障礙回報] 信件")
             return None
 
-        # 取最後一封新信件
-        for change in reversed(changes):
-            messages_added = change.get("messagesAdded", [])
-            if messages_added:
-                return messages_added[-1]["message"]["id"]
+        # 標記為已讀（移除 UNREAD 標籤）
+        msg_id = messages[0]["id"]
+        modify_cmd = [
+            "gws", "gmail", "users", "messages", "modify",
+            "--params", json.dumps({"userId": "me", "id": msg_id}),
+            "--json", json.dumps({"removeLabelIds": ["UNREAD"]})
+        ]
+        subprocess.run(modify_cmd, capture_output=True)
 
-        return None
+        return msg_id
 
     except Exception as e:
         logger.error(f"取得 message ID 失敗：{e}")

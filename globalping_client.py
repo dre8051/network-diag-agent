@@ -29,11 +29,23 @@ def _headers() -> dict:
 
 def _create_measurement(measurement_type: str, target: str, options: dict = None) -> Optional[str]:
     """發起測試，回傳 measurement ID"""
+    # 如果 target 是 IP，跳過 dns 測試以免產生 400 Bad Request
+    if measurement_type == "dns":
+        import re
+        if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", target):
+            logger.info("[Globalping] 目標為 IP，自動略過 DNS 解析測試")
+            return None
+
     payload = {
         "type": measurement_type,
         "target": target,
-        "locations": [{"country": "TW"}],
-        "limit": PROBES_PER_TEST,
+        "locations": [
+            {"country": "TW"},  # 台灣
+            {"country": "US"},  # 美國
+            {"country": "JP"},  # 日本
+            {"country": "DE"}   # 德國
+        ],
+        "limit": 4,
     }
     if options:
         payload["measurementOptions"] = options
@@ -109,6 +121,10 @@ def run_traceroute(target: str) -> dict:
 
 def run_dns(target: str) -> dict:
     """執行 DNS 解析測試"""
+    import re
+    if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", target):
+        return {"type": "dns", "status": "skipped", "error": "目標為 IP 位址，不需執行 DNS 解析"}
+
     measurement_id = _create_measurement(
         "dns", target,
         options={"query": {"type": "A"}}
