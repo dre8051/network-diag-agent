@@ -1,0 +1,26 @@
+# 敏感資料
+.env
+credentials.json
+token.json
+
+# 報告輸出
+reports/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+*.egg-info/
+dist/
+build/
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
